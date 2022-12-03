@@ -1,0 +1,217 @@
+# Mobile Quantum Computing
+from asyncio import tasks
+import functools
+import os
+from re import I
+# from symbol import dotted_as_names
+import numpy as np
+import random
+import math
+import cmath
+import scipy.special as sc
+import matplotlib.pyplot as plt
+import pandas as pd
+import gym
+import math
+from numpy import random
+from functools import partial
+from typing import Tuple, Optional
+from pettingzoo import ParallelEnv
+import warnings
+from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple, TypeVar
+from scipy import constants
+from scipy import integrate
+import gym.spaces
+import numpy as np
+
+ObsType = TypeVar("ObsType")
+ActionType = TypeVar("ActionType")
+AgentID = str
+ObsDict = Dict[AgentID, ObsType]
+ActionDict = Dict[AgentID, ActionType]
+from numpy.core.fromnumeric import sort
+path1 = os.path.abspath(".")
+
+
+
+class IoVCDA(gym.Env, ParallelEnv):
+    """
+        This is a simple implementation of coutinuous double auction in Internet of Vehicles
+        An online computation offloading environment
+        Time slot: 
+        Decision slot:
+        multi-user, multi-server
+        hybrid discrete and continuous actions
+        multiple agent
+        parallel decision making
+
+        Workflow:
+            1. 首先初始化系统中用户 (计算能力和计算任务的大小,难度), 边缘基站 (经典计算能力, 量子计算能力), 用户和基站之间的信道状态
+            2. 然后用户观察环境, 就是观察上面提到的要素, 然后做出决策,决定向哪个基站迁移, 迁移多少比率的数据
+            3. 然后边缘基站衡量当前任务是否能被量子计算加速, 如果可以, 那么再衡量 qubit的数量, quantum volume, 和 成功率, 如果三个都达标, 那么就交由量子计算机处理, 计算相应的能量和延迟, 如果其中一个不达标, 就加入经典计算的任务队列 (因为我们考虑计算任务无法立即完成)
+            4. 边缘服务器处理任务队列中的任务, 并计算总延迟 (传输延时, 计算延时) 和 处理所需的能量消耗 (), 我们就像以前一样考虑每个用户自己有一个经典服务器, 但是只有一个量子服务器
+            5. 将延时和能量转化为奖励反馈给智能体们
+            6. 然后进入下一时间轮次
+            Note: 这个环境的优化变量是任务可以选择向哪个基站迁移或者是迁移多少比例的数据, 简单来说就是用强化学习算法学习出一个最小化时延和能耗的算法.
+
+            实验需要验证的内容: 
+            1. 所提出算法再不同场景下的收敛性
+            2. 性能对比, 在不同用户数量的情况下
+
+
+    """
+
+    def __init__(self):
+        super().__init__()
+        random.seed(131) # 88888
+        
+        self.RSUs = 3 # number of submarket
+        self.vehicles = 10 # total number of vehicles
+
+
+        self.observation_space = gym.spaces.Box(low=-np.inf, high=np.inf, shape=(1,), dtype=np.float32)
+        # the auction space is three, indicating their aggresiveness
+        self.action_space = gym.spaces.Discrete(3) # 
+
+
+
+    def reset(self, seed=None) -> np.ndarray: # 这个reset还能改seed, 太牛了
+        # 初始化用户的任务和云的负载
+
+        observations = []
+        for i in range(self.vehicles):
+            observations.append(np.concatenate(([],[])))
+        observations = np.array(observations)
+        # print(observations.shape)
+        # observations =[[]
+        #         for i in range(len(self.agents))]
+        # print(type(observations))
+        # observations = {agent: None for agent in self.agents}
+        self._observations = observations
+        self._rew = []
+        self._done = []
+        return observations
+
+    def step(self, actions: np.ndarray
+             ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, dict]:
+
+        rewards =  0
+        # print(total_latency, total_energy)
+        self.num_moves += 1
+        if self.num_moves == 10:
+            dones = [False for agent in self.agents]
+        else:
+            dones = [False for agent in self.agents]
+            
+        # current observation is just the other player's most recent action
+        observations = []
+        for i in range(self.user_n):
+            observations_user =np.array([self.device_frequency[i]/self.device_avg_frequency, self.transmission_power[i], self.task_data[i]/ self.task_avg_data, self.task_classical_comp[i]/self.task_avg_classical_comp, self.rt_qubits[i]/self.max_qubits, self.rt_depth[i]/self.max_depth])
+            observations_server =np.concatenate((self.server_frequency/self.server_avg_frequency, self.server_qubits/self.server_max_qubits, self.server_k))
+            observations_network = self.channel_gain[i]
+            observations.append(np.concatenate((observations_user, observations_server, observations_network)))
+        observations = np.array(observations)
+
+        # typically there won't be any information in the infos, but there must
+        # still be an entry for each agent
+        infos = {}
+
+        return observations, rewards, dones, infos
+
+    def seed(self, seed: Optional[int] = None) -> int:
+        pass
+
+    def observe(self, agent):
+        observation = 0
+        # observation = pygame.surfarray.pixels3d(self.screen)
+        # i = self.agent_name_mapping[agent]
+        # # Set x bounds to include 40px left and 40px right of piston
+        # x_high = self.wall_width + self.piston_width * (i + 2)
+        # x_low = self.wall_width + self.piston_width * (i - 1)
+        # y_high = self.screen_height - self.wall_width - self.piston_body_height
+        # y_low = self.wall_width
+        # cropped = np.array(observation[x_low:x_high, y_low:y_high, :])
+        # observation = np.rot90(cropped, k=3)
+        # observation = np.fliplr(observation)
+        return observation
+    def state(self):
+        """Returns an observation of the global environment."""
+        state = 0
+        # state = pygame.surfarray.pixels3d(self.screen).copy()
+        # state = np.rot90(state, k=3)
+        # state = np.fliplr(state)
+        return state
+    def test_random(self):
+        total_r = []
+        for i in range(100):
+            self.reset()
+            ac_allocation = np.random.randint(0,10,(self.user_n,))
+            ac_partial = np.random.uniform(0,1,(self.user_n,))
+            acs = []
+            # make action
+            for i in range(self.user_n):
+                acs.append(ac_allocation[i])
+                acs.append(ac_partial[i])
+            acs = np.array(acs)
+            s, r, d, i = env.step(acs)
+            total_r.append(r[0])
+        return np.array(total_r).mean()
+    def test_random_cloud(self):
+        total_r = []
+        for i in range(100):
+            self.reset()
+            ac_allocation = np.random.randint(0,10,(self.user_n,))
+            ac_partial = np.zeros(self.user_n)
+            acs = []
+            # make action
+            for i in range(self.user_n):
+                acs.append(ac_allocation[i])
+                acs.append(ac_partial[i])
+            acs = np.array(acs)
+            s, r, d, i = env.step(acs)
+            total_r.append(r[0])
+        return np.array(total_r).mean()
+
+    def test_greedy_cloud(self):
+        total_r = []
+        for i in range(100):
+            self.reset()
+            idx = np.argsort(self.server_qubits)[::-1]
+            # print(self.server_qubits)
+            # print(idx)
+            ac_allocation = np.arange(self.user_n)
+            # print("+")
+            ac_allocation = ac_allocation[idx]
+            # print(ac_allocation)
+            ac_partial = np.zeros(self.user_n)
+            acs = []
+            # make action
+            for i in range(self.user_n):
+                acs.append(ac_allocation[i])
+                acs.append(ac_partial[i])
+            acs = np.array(acs)
+            s, r, d, i = env.step(acs)
+            total_r.append(r[0])
+        return np.array(total_r).mean()
+
+    def test_local(self):
+        total_r = []
+        for i in range(100):
+            self.reset()
+            ac_allocation = np.random.randint(0,10,(self.user_n,))
+            ac_partial = np.ones(self.user_n)
+            acs = []
+            # make action
+            for i in range(self.user_n):
+                acs.append(ac_allocation[i])
+                acs.append(ac_partial[i])
+            acs = np.array(acs)
+            # print(acs)
+            s, r, d, i = env.step(acs)
+            total_r.append(r[0])
+        return np.array(total_r).mean()
+    def close(self) -> None:
+        pass
+
+if __name__ == "__main__":
+    pass
