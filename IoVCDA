@@ -63,12 +63,12 @@ class IoVCDA(gym.Env, ParallelEnv):
 
     """
 
-    def __init__(self):
+    def __init__(self, vehicles = 100):
         super().__init__()
         random.seed(131) # 88888
         self.rounds = 10
         self.RSUs = 3 # number of submarket
-        self.vehicles = 10 # total number of vehicles
+        self.vehicles = 100 # total number of vehicles
 
         # self.required_quality = random.randint(0, self.rounds, self.vehicles)
         # required quality 根据时间变化吧
@@ -90,7 +90,7 @@ class IoVCDA(gym.Env, ParallelEnv):
 
     def reset(self, seed=None) -> np.ndarray: # 这个reset还能改seed, 太牛了
         # 初始化用户的任务和云的负载
-        self.num_moves = 0 # 需要经过 N 轮的轮换
+        self.moves = 0 # 需要经过 N 轮的轮换
 
         self.budget = 0
 
@@ -118,6 +118,32 @@ class IoVCDA(gym.Env, ParallelEnv):
                  'price' : price,
                  'trade_id' : trade_id}
         return order
+    
+    def find_equilibrium(self, buys, sells):
+        upper_price = 0
+        lower_price = 0
+        len_buy = len(buys)
+        len_sell = len(sells)
+        k = 0
+        while k<len_buy and k< len_sell and buys[k] >= sells[k]:
+            k += 1
+        if k==0:
+            return k, buys[0], sells[0]
+        else:
+            b_k = buys[k-1]
+            s_k = sells[k-1]
+            if k == len_buy:
+                b_k1 = buys[-1]
+            else:
+                b_k1 = buys[k]
+            if k == len_sell:
+                s_k1 = sells[-1]
+            else:
+                s_k1 = sells[k]
+            upper_price = min(b_k, s_k1)
+            lower_price = max(s_k, b_k1)
+            return k, lower_price, upper_price
+        
 
     def step(self, actions: np.ndarray
              ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, dict]:
@@ -132,13 +158,23 @@ class IoVCDA(gym.Env, ParallelEnv):
         # compute global ce price:
         global_sell_ask = []
         global_buy_bid = []
+        for i in range(self.vehicles):
+            if self.required_quality[self.moves,i] == 0:
+                global_sell_ask.append(self.values[i])
+            else:
+                global_buy_bid.append(self.values[i])
+        g_k, g_upper, g_lower = self.find_equilibrium(global_buy_bid, global_sell_ask)
+        # Equilibrium range
 
         # 买家是主动的, 卖家是被动的
         # for each local market:
+        all_local_volume = []
+        all_local_revenue = []
+        all_local_budget = []
         for i in range(self.RSUs):
-            self.local_volume = 0
-            self.local_revenue = 0
-            self.local_budget = 0
+            local_volume = 0
+            local_revenue = 0
+            local_budget = 0
             # 首先构建这一个market的seller pool
             # local_first_buyerbook = OrderBook()
             # local_second_buyerbook = OrderBook()
@@ -146,36 +182,36 @@ class IoVCDA(gym.Env, ParallelEnv):
             # for sellers
             local_sell_value = []
             for j in range(self.vehicles):
-                if self.expected_quality[j] == 0:
-                    local_sell_value.append[self.values[j]]
+                if self.required_quality[self.moves,j] == 0:
+                    local_sell_value.append(self.values[j])
             local_buy_value = []
             for j in range(self.vehicles):
         # primary market:
-                if self.location[j] == i and actions[j] == 0:
+                if self.location[self.moves, j] == i and actions[j] == 0:
                     # FIFO
                     if len(local_sell_value) >= 0:
-                        self.local_volume += 1
-                        self.local_revenue += local_sell_value[-1]
-                        self.local_budget += self.values[j] - local_sell_value[-1]
+                        local_volume += 2
+                        local_revenue += local_sell_value[-1] + self.values[j]
+                        local_budget += self.values[j] - local_sell_value[-1]
                         local_sell_value.pop(-1)
                     # trade with the first sellers
                     # trades, order_id, trader_id = local_first_buyerbook.process_order(self.make_order("bid", self.expected_quality[j], self.values[j],j),False, False)
         # recovery market:
-                if self.location[j] == i and actions[j] == 1:
-                    # Second Auction
+                if self.location[self.moves, j] == i and actions[j] == 1:
+                    # Second-price Auction
                     if len(local_sell_value) >= 2:
-                        self.local_volume += 1
-                        self.local_revenue += local_sell_value[-2]
-                        self.local_budget += self.values[j] - local_sell_value[-2]
+                        local_volume += 2
+                        local_revenue += local_sell_value[-2] + self.values[j]
+                        local_budget += self.values[j] - local_sell_value[-2]
                         local_sell_value.pop(-1)
         # ordinary market:
-                if self.location[j] == i and actions[j] == 2:
-                    local_buy_value.append()
+                if self.location[self.moves, j] == i and actions[j] == 2:
+                    local_buy_value.append(self.values[j])
             # clear local market
             len_buyer = len(local_buy_value)
             len_seller = len(local_sell_value)
             k = 0
-            while local_buy_value[k] >= local_sell_value[k] and k < len_buyer and k < len_seller:
+            while k < len_buyer and k < len_seller and local_buy_value[k] >= local_sell_value[k]:
                 k += 1
             if k == len_buyer:
                 p_buyer = local_buy_value[-1]
@@ -186,26 +222,45 @@ class IoVCDA(gym.Env, ParallelEnv):
             else:
                 p_seller = local_sell_value[k]
             # check clear rule
-            if k == 0:
-                self.local_volume += 0
+            if k <= 0:
+                # no transaction
+                pass
             elif (p_buyer+p_seller)/2 >= local_sell_value[k-1] and (p_buyer+p_seller)/2 <= local_buy_value[k-1]:
-                self.local_volume += k-1
-                self.local_revenue 
+                local_volume += 2*(k-1)
+                local_revenue += (k-1) * (p_buyer+p_seller)
+                # bb = 0
             else:
-                self.local_volume += k-2
-                    
-        rewards =  0
+                # trade reduction
+                if (k-2 <= 0):
+                    # no transaction
+                    pass
+                else:
+                    local_volume += 2 * (k-2)
+                    local_revenue += (k-2) * (local_sell_value[k-1] + local_buy_value[k-1])
+                    local_budget += (k-2) *  (local_buy_value[k-1] - local_sell_value[k-1])
+            all_local_volume.append(local_volume)
+            all_local_revenue.append(local_revenue)
+            all_local_budget.append(local_budget)
+        # for each local market
+        all_clear_price = np.array(all_local_revenue) / np.array(local_volume)
+        penalty_eq = 0
+        for i in range(self.RSUs):
+            if all_clear_price[i] > g_upper:
+                penalty_eq += abs(all_clear_price[i]-g_upper)
+            elif all_clear_price[i] < g_lower:
+                penalty_eq += abs(all_clear_price[i]-g_lower)
+        rewards = - (penalty_eq + np.array(all_local_budget).sum())
         # print(total_latency, total_energy)
-        self.num_moves += 1
-        if self.num_moves > self.rounds:
-            dones = [True for agent in self.agents]
+        self.moves += 1
+        if self.moves >= self.rounds:
+            dones = [True for agent in range(self.vehicles)]
         else:
             # self.expected_quality += self.required_quality[self.num_moves]
-            dones = [False for agent in self.agents]
+            dones = [False for agent in range(self.vehicles)]
 
         # current observation is just the other player's most recent action
         observations = []
-        for i in range(self.user_n):
+        for i in range(self.vehicles):
             observations.append(np.concatenate(([],[])))
         observations = np.array(observations)
 
@@ -242,7 +297,7 @@ class IoVCDA(gym.Env, ParallelEnv):
         total_r = []
         for i in range(100):
             self.reset()
-            ac_allocation = np.random.randint(0,10,(self.user_n,))
+            ac_allocation = np.random.randint(0,100,(self.user_n,))
             ac_partial = np.random.uniform(0,1,(self.user_n,))
             acs = []
             # make action
@@ -311,4 +366,14 @@ class IoVCDA(gym.Env, ParallelEnv):
         pass
 
 if __name__ == "__main__":
-    env = IoVCDA()
+    num_v = 100
+    env = IoVCDA(num_v)
+    env.reset()
+    for i in range(100):
+        env.reset()
+        d = [True]
+        while d[0]:
+            ac = random.randint(0,3, num_v)
+            s, r, d, i = env.step(ac)
+            print(r)
+    
