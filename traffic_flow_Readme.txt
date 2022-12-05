@@ -1,0 +1,13 @@
+名称	说明
+POINT_ID	监测点id
+ID	id
+REC_TIME	数据时间
+AVGFLOW	车流量
+AVGSPEED	平均车速
+AVGHEADDIST	车头距
+AVGACURATE	平均占道率
+LONGVEH	长车流量
+HUGEVEH	大车流量
+MIDVEH	中型车流量
+LIGHTVEH	轻型车流量
+MINIVEH	微型车流量
