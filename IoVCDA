@@ -59,6 +59,32 @@ class IoVCDA(gym.Env, ParallelEnv):
             实验需要验证的内容: 
             1. 所提出算法再不同场景下的收敛性
             2. 性能对比, 在不同用户数量的情况下
+        
+
+        关于order的一些补充:
+            每个卖家会有自己多余的资源（这个可以随机），然后要有一个步骤来检查卖家是否有买家需要的文件和宽带资源（这一步我们可以当作所有出价的卖家都已经检查过了，他们都符合要求）
+            然后你看看我之前写的request和response，比如同样的价格，bandwidth越高越好。如果考虑车与车之家的距离和车速，那我们得看车距多少内可以达到稳定传输（当然也不一定要考虑这个）
+
+            文章里的sample request:
+            Requester ID    G2832738GH2
+            NDN Filename    Spiderweb2022
+            NDN Part ID     1
+            File Size       2000 KB
+            Min bandwidth   100 KB
+            Timestamp       2022-02-02 12:12:12
+            Validity        2022-02-02 12:13:12
+
+            文章里的sample response:
+            Respondant ID   F9283738OW1
+            NDN Filename    Spiderweb2022
+            NDN Part ID     1
+            Price Offer     2 Credits/KB
+            Bandwidth       150 KB
+            Timestamp       2022-02-02 12:12:32
+            Validity        2022-02-02 12:14:32
+
+        关于子市场：
+            我找到的数据是固定的一个观测点，我们可以有一个这样的很繁华的城市道路+一些自己模拟的乡村小路（没什么车的那种），或者直接用城市的数据就行。主要看你工作量大不大...
 
 
     """
@@ -88,7 +114,7 @@ class IoVCDA(gym.Env, ParallelEnv):
 
 
 
-    def reset(self, seed=None) -> np.ndarray: # 这个reset还能改seed, 太牛了
+    def reset(self, seed=None) -> np.ndarray: # 这个reset还能改seed, 太牛了(哦呀)
         # 初始化用户的任务和云的负载
         self.moves = 0 # 需要经过 N 轮的轮换
 
@@ -111,6 +137,7 @@ class IoVCDA(gym.Env, ParallelEnv):
         self._rew = []
         self._done = []
         return observations
+
     def make_order(self, side, quantity, price, trade_id):
         order = {'type' : 'limit', 
                  'side' : side, 
