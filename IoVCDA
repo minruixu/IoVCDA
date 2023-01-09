@@ -89,17 +89,18 @@ class IoVCDA(gym.Env, ParallelEnv):
 
     """
 
-    def __init__(self, vehicles = 100):
+    def __init__(self, vehicles = 20):
         super().__init__()
         random.seed(131) # 88888
         self.rounds = 10
         self.RSUs = 3 # number of submarket
-        self.vehicles = 100 # total number of vehicles
+        self.vehicles = 20 # total number of vehicles
+        self.coverage = 500 # m
 
         # self.required_quality = random.randint(0, self.rounds, self.vehicles)
         # required quality 根据时间变化吧
 
-        self.required_quality = random.randint(0, 2, (self.rounds, self.vehicles))
+        self.required_quality = random.randint(0, 2, (self.rounds, self.vehicles)) # 是0 还是 1, 如果是0 就是seller, 如果是1 就是buyer
         
         self.values = random.uniform(0,1, self.vehicles)
         self.values[::-1].sort()
@@ -116,7 +117,7 @@ class IoVCDA(gym.Env, ParallelEnv):
 
     def reset(self, seed=None) -> np.ndarray: # 这个reset还能改seed, 太牛了(哦呀)
         # 初始化用户的任务和云的负载
-        self.moves = 0 # 需要经过 N 轮的轮换
+        self.moves = 0 # 需要经过 N 轮的轮换, 在grossip 的一开始所有人只有RSU信息和本地信息
 
         self.budget = 0
 
@@ -124,19 +125,28 @@ class IoVCDA(gym.Env, ParallelEnv):
 
         self.total_satisfied = np.zeros(self.vehicles)
 
-        observations = []
-        for i in range(self.vehicles):
-            observations.append(np.concatenate(([],[])))
-        observations = np.array(observations)
+        # observations = []
+        # for i in range(self.vehicles):
+        #     observations.append(np.concatenate(([],[])))
+        # observations = np.array(observations)
         # print(observations.shape)
         # observations =[[]
         #         for i in range(len(self.agents))]
         # print(type(observations))
         # observations = {agent: None for agent in self.agents}
-        self._observations = observations
+        # for grossip
+        self.available_bandwith = np.zeros(self.vehicles) 
+        self.last_price = 0
+        self.transmission_rate = np.random.uniform(1, 10, (self.vehicles, self.vehicles))
+
+        self.RSU_state = self.vehicles
+        self.grossip_state = [[self.available_bandwith[i], self.last_price] for i in range(self.vehicles)]
+
+        self.local_state = []
+        self.state = np.array([self.RSU_state, self.grossip_state, self.local_state])
         self._rew = []
         self._done = []
-        return observations
+        return np.array(self.state, dtype=np.float32), {}
 
     def make_order(self, side, quantity, price, trade_id):
         order = {'type' : 'limit', 
@@ -203,9 +213,6 @@ class IoVCDA(gym.Env, ParallelEnv):
             local_revenue = 0
             local_budget = 0
             # 首先构建这一个market的seller pool
-            # local_first_buyerbook = OrderBook()
-            # local_second_buyerbook = OrderBook()
-            # local_third_buyerbook = OrderBook()
             # for sellers
             local_sell_value = []
             for j in range(self.vehicles):
@@ -270,6 +277,10 @@ class IoVCDA(gym.Env, ParallelEnv):
             all_local_budget.append(local_budget)
         # for each local market
         all_clear_price = np.array(all_local_revenue) / np.array(local_volume)
+
+        self.last_price = all_clear_price
+        for i in range(self.vehicles):
+            self.available_bandwith[i] = np.array(local_sell_value).mean() # 我们先假设完全信息
         penalty_eq = 0
         for i in range(self.RSUs):
             if all_clear_price[i] > g_upper:
@@ -286,16 +297,17 @@ class IoVCDA(gym.Env, ParallelEnv):
             dones = [False for agent in range(self.vehicles)]
 
         # current observation is just the other player's most recent action
-        observations = []
+        all_state = []
         for i in range(self.vehicles):
-            observations.append(np.concatenate(([],[])))
-        observations = np.array(observations)
+            # update grossip_state
+            self.grossip_state[i] = [self.available_bandwith[i], self.last_price]
+            all_state.append(np.array([self.RSU_state,self.grossip_state[i], self.transmission_rate[i] ]).reshape(-1))
 
         # typically there won't be any information in the infos, but there must
         # still be an entry for each agent
         infos = {}
 
-        return observations, rewards, dones, infos
+        return np.array(all_state, dtype=np.float32), rewards, dones, infos
 
     def seed(self, seed: Optional[int] = None) -> int:
         pass
